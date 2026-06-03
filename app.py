@@ -12,13 +12,26 @@ import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
 
-# live price helper (optional — falls back to manual if unavailable)
+# live price helper — Twelve Data API (key stored securely in Streamlit secrets)
+import urllib.request, json
+
+@st.cache_data(ttl=300)   # cache 5 min so we don't spam the API
 def fetch_live_price():
+    """Fetch Indus Towers live price from Twelve Data.
+    Returns (price, error). Falls back gracefully if key missing or API fails."""
     try:
-        import yfinance as yf
-        t = yf.Ticker("INDUSTOWER.NS")
-        px = t.fast_info.get("lastPrice") or t.history(period="1d")["Close"].iloc[-1]
-        return float(px), None
+        api_key = st.secrets.get("TWELVE_DATA_KEY", "")
+        if not api_key:
+            return None, "no_key"
+        # Indus Towers on NSE
+        url = (f"https://api.twelvedata.com/price?symbol=INDUSTOWER&exchange=NSE"
+               f"&country=India&apikey={api_key}")
+        with urllib.request.urlopen(url, timeout=8) as resp:
+            data = json.loads(resp.read().decode())
+        if "price" in data:
+            return float(data["price"]), None
+        # API returned an error message
+        return None, data.get("message", "unknown_error")
     except Exception as e:
         return None, str(e)
 
@@ -257,13 +270,16 @@ R = run_dcf(g_first, ebitm_first, wacc, tgr, tax, use_tax_ebit_curve=use_curve)
 st.sidebar.markdown("#### Market Price")
 if "mkt_price" not in st.session_state:
     st.session_state.mkt_price = 435.65
-if st.sidebar.button("Fetch live price (NSE · ~15 min delay)"):
+if st.sidebar.button("Fetch live price (NSE · Twelve Data)"):
     px, err = fetch_live_price()
     if px:
         st.session_state.mkt_price = round(px, 2)
         st.sidebar.success(f"Live price: ₹{px:.2f}")
+    elif err == "no_key":
+        st.sidebar.info("Live price needs an API key. Add TWELVE_DATA_KEY in "
+                        "app Settings → Secrets. Using manual value for now.")
     else:
-        st.sidebar.warning("Live price unavailable — using manual value below.")
+        st.sidebar.warning("Live price unavailable right now — using manual value below.")
 MKT = st.sidebar.number_input("Market Price (₹)", value=float(st.session_state.mkt_price), step=1.0)
 st.session_state.mkt_price = MKT
 upside = (R["sp"]-MKT)/MKT*100
