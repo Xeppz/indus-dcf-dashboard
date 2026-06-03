@@ -256,7 +256,7 @@ def do_reset():
     st.session_state.update(g_first=6.0, ebitm_first=44.0,
                             wacc=EXACT_WACC, tgr=3.5, tax=25.0)
 
-st.sidebar.button("Reset to base-case assumptions", on_click=do_reset)
+st.sidebar.button("Reset", on_click=do_reset)
 
 st.sidebar.markdown("#### Key Value Drivers")
 g_first = st.sidebar.slider("Revenue Growth — Year 1 (shifts whole curve)",
