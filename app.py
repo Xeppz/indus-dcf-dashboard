@@ -12,33 +12,40 @@ import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
 
-# live price helper — Twelve Data API (key stored securely in Streamlit secrets)
+# live price helper — Alpha Vantage API (key stored securely in Streamlit secrets)
 import urllib.request, json
 
-@st.cache_data(ttl=300)   # cache 5 min so we don't spam the API
+@st.cache_data(ttl=300)   # cache 5 min so we don't burn the daily API quota
 def fetch_live_price():
-    """Fetch Indus Towers live price from Twelve Data.
-    Tries several symbol formats and returns (price, error_message)."""
-    api_key = st.secrets.get("TWELVE_DATA_KEY", "")
+    """Fetch Indus Towers live price from Alpha Vantage.
+    Free tier supports NSE via the BSE/NSE suffix. Returns (price, error_detail)."""
+    api_key = st.secrets.get("ALPHA_VANTAGE_KEY", "")
     if not api_key:
         return None, "no_key"
-    # try the most reliable symbol formats in order
-    attempts = [
-        "symbol=INDUSTOWER&exchange=NSE",
-        "symbol=INDUSTOWER.NSE",
-        "symbol=INDUSTOWER&country=India",
-        "symbol=INDUSTOWER",
-    ]
+    # Alpha Vantage uses GLOBAL_QUOTE with an exchange suffix for Indian stocks
+    symbols = ["INDUSTOWER.BSE", "INDUSTOWER.NSE", "INDUSTOWER.BO"]
     last_msg = "unknown_error"
-    for q in attempts:
+    for sym in symbols:
         try:
-            url = f"https://api.twelvedata.com/price?{q}&apikey={api_key}"
-            with urllib.request.urlopen(url, timeout=8) as resp:
+            url = (f"https://www.alphavantage.co/query?function=GLOBAL_QUOTE"
+                   f"&symbol={sym}&apikey={api_key}")
+            with urllib.request.urlopen(url, timeout=10) as resp:
                 data = json.loads(resp.read().decode())
-            if isinstance(data, dict) and data.get("price"):
-                return float(data["price"]), None
-            # capture the API's own error text so we can show it
-            last_msg = data.get("message", str(data)) if isinstance(data, dict) else str(data)
+            # successful quote
+            quote = data.get("Global Quote") or data.get("Global Quote ", {})
+            if quote and quote.get("05. price"):
+                px = float(quote["05. price"])
+                if px > 0:
+                    return px, None
+            # API limit / info messages
+            if "Note" in data:
+                last_msg = "Daily API limit reached — try again later"
+            elif "Information" in data:
+                last_msg = data["Information"][:120]
+            elif "Error Message" in data:
+                last_msg = f"symbol {sym} not found"
+            else:
+                last_msg = f"no price for {sym}"
         except Exception as e:
             last_msg = str(e)
     return None, last_msg
@@ -278,13 +285,13 @@ R = run_dcf(g_first, ebitm_first, wacc, tgr, tax, use_tax_ebit_curve=use_curve)
 st.sidebar.markdown("#### Market Price")
 if "mkt_price" not in st.session_state:
     st.session_state.mkt_price = 435.65
-if st.sidebar.button("Fetch live price (NSE · Twelve Data)"):
+if st.sidebar.button("Fetch live price (NSE · Alpha Vantage)"):
     px, err = fetch_live_price()
     if px:
         st.session_state.mkt_price = round(px, 2)
         st.sidebar.success(f"Live price: ₹{px:.2f}")
     elif err == "no_key":
-        st.sidebar.info("Live price needs an API key. Add TWELVE_DATA_KEY in "
+        st.sidebar.info("Live price needs an API key. Add ALPHA_VANTAGE_KEY in "
                         "app Settings → Secrets. Using manual value for now.")
     else:
         st.sidebar.warning("Live price unavailable — using manual value below.")
