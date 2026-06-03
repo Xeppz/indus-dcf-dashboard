@@ -18,22 +18,30 @@ import urllib.request, json
 @st.cache_data(ttl=300)   # cache 5 min so we don't spam the API
 def fetch_live_price():
     """Fetch Indus Towers live price from Twelve Data.
-    Returns (price, error). Falls back gracefully if key missing or API fails."""
-    try:
-        api_key = st.secrets.get("TWELVE_DATA_KEY", "")
-        if not api_key:
-            return None, "no_key"
-        # Indus Towers on NSE
-        url = (f"https://api.twelvedata.com/price?symbol=INDUSTOWER&exchange=NSE"
-               f"&country=India&apikey={api_key}")
-        with urllib.request.urlopen(url, timeout=8) as resp:
-            data = json.loads(resp.read().decode())
-        if "price" in data:
-            return float(data["price"]), None
-        # API returned an error message
-        return None, data.get("message", "unknown_error")
-    except Exception as e:
-        return None, str(e)
+    Tries several symbol formats and returns (price, error_message)."""
+    api_key = st.secrets.get("TWELVE_DATA_KEY", "")
+    if not api_key:
+        return None, "no_key"
+    # try the most reliable symbol formats in order
+    attempts = [
+        "symbol=INDUSTOWER&exchange=NSE",
+        "symbol=INDUSTOWER.NSE",
+        "symbol=INDUSTOWER&country=India",
+        "symbol=INDUSTOWER",
+    ]
+    last_msg = "unknown_error"
+    for q in attempts:
+        try:
+            url = f"https://api.twelvedata.com/price?{q}&apikey={api_key}"
+            with urllib.request.urlopen(url, timeout=8) as resp:
+                data = json.loads(resp.read().decode())
+            if isinstance(data, dict) and data.get("price"):
+                return float(data["price"]), None
+            # capture the API's own error text so we can show it
+            last_msg = data.get("message", str(data)) if isinstance(data, dict) else str(data)
+        except Exception as e:
+            last_msg = str(e)
+    return None, last_msg
 
 st.set_page_config(page_title="DCF Dashboard · Indus Towers Ltd", page_icon="◆", layout="wide",
                    initial_sidebar_state="expanded")
@@ -279,7 +287,9 @@ if st.sidebar.button("Fetch live price (NSE · Twelve Data)"):
         st.sidebar.info("Live price needs an API key. Add TWELVE_DATA_KEY in "
                         "app Settings → Secrets. Using manual value for now.")
     else:
-        st.sidebar.warning("Live price unavailable right now — using manual value below.")
+        st.sidebar.warning("Live price unavailable — using manual value below.")
+        with st.sidebar.expander("Why? (details)"):
+            st.caption(f"API response: {err}")
 MKT = st.sidebar.number_input("Market Price (₹)", value=float(st.session_state.mkt_price), step=1.0)
 st.session_state.mkt_price = MKT
 upside = (R["sp"]-MKT)/MKT*100
