@@ -344,8 +344,8 @@ with st.expander("About Indus Towers & this model"):
 k1,k2,k3,k4 = st.columns(4)
 k1.metric("Intrinsic Value / Share", f"₹{R['sp']:.2f}", f"{upside:+.1f}% vs market")
 k2.metric("Current Market Price", f"₹{MKT:.2f}")
-k3.metric("Enterprise Value", f"₹{R['ev']/1000:,.0f}B")
-k4.metric("Equity Value", f"₹{R['eq']/1000:,.0f}B")
+k3.metric("Enterprise Value", f"₹{R['ev']/1:,.0f}M")
+k4.metric("Equity Value", f"₹{R['eq']/1:,.0f}M")
 
 k5,k6,k7,k8 = st.columns(4)
 k5.metric("WACC", f"{wacc:.2f}%")
